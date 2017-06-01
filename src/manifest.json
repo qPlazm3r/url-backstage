@@ -1,0 +1,16 @@
+{
+    "manifest_version": 2,
+    "name": "URL Backstage",
+    "version": "0.0.1",
+    "description": "Discovers what's behind shortened links",
+    "content_scripts": [{
+        "matches": ["https://vk.com/*"],
+        "js": ["url-backstage.js"],
+        "run_at": "document_end"
+    }],
+    "permissions": [
+        "storage",
+        "https://vk.com/*",
+        "https://api.vk.com/method/*"
+    ]
+}
