@@ -1,21 +1,72 @@
 "use strict";
 
-/** Database */
-let db = null;
+class Cache {
+    constructor(){
+        this.dbName = 'UrlBackstage';
+        this.dbVersion = 1;
+        this.dbStore = 'Links';
+        this.dbKey = 'shortUrl';
+        this.dbIndex = ['longUrl', 'longUrl', { unique:false }];
 
-/** Initialize database on startup */
-const initDB = () => {
-    if (db) return;
-    let dbrq = indexedDB.open('UrlBackstage', 1);
-    dbrq.onupgradeneeded = event => {
-        db = event.target.result;
-        let store = db.createObjectStore('Links', { keyPath: 'shortUrl' });
-        store.createIndex('longUrl', 'longUrl', { 'unique': false });
-    };
-    dbrq.onsuccess = event => {
-        db = event.target.result;
-    };
-};
+        let rqst = indexedDB.open(this.dbName, this.dbVersion);
+        rqst.onupgradeneeded = event => {
+            this._db = event.target.result;
+            let store = this._db.createObjectStore(this.dbStore, {keypath: this.dbKey});
+            store.createIndex.apply(null, this.dbIndex);
+        };
+        rqst.onsuccess = event => {
+            this._db = event.target.result;
+        };
+        rqst.onerror = event => {
+            throw event.target.error;
+        }
+    }
+
+    /**
+     * General database read request
+     * @param method {string} Request method
+     * @param mode {'readonly','readwrite'} Transaction mode
+     * @param args {Array} Request arguments
+     * @return {Promise}
+     */
+    query(method, mode, ...args) {
+        return new Promise(callback => {
+            let store = this._db.transaction(this.dbStore, mode).objectStore(this.dbStore);
+            let rqst = null;
+            if (args.length) { rqst = store[method].apply(store, args); }
+            else { rqst = store[method](); }
+            rqst.onerror = event => {
+                throw event.target.error;
+            };
+            rqst.onsuccess = event => {
+                callback(event.target.result);
+            };
+        });
+    }
+
+    count() { return this.query('count', 'readonly'); }
+    get(key) { return this.query('get', 'readonly', key); }
+    all() { return this.query('getAll', 'readonly'); }
+    add(obj) { return this.query('add', 'readwrite', obj); }
+    update(obj) { return this.query('put', 'readwrite', obj); }
+    clear() { return this.query('clear', 'readwrite'); }
+    remove(key) { return this.query('delete', 'readwrite', key); }
+    load(objects) {
+        return new Promise(callback => {
+            let store = this._db.transaction(this.dbStore, mode).objectStore(this.dbStore);
+            const putNext = () => {
+                if (!objects) { callback(); return; }
+                let rqst = store.put(objects.pop());
+                rqst.onsuccess = putNext;
+                rqst.onerror = event => { throw event.target.error; };
+            };
+            putNext();
+        });
+    }
+}
+
+/** Database */
+const cache = new Cache();
 
 /**
  * Get data from DB
@@ -25,22 +76,16 @@ const initDB = () => {
  */
 const getFromDBOrLoad = (url, loader) => new Promise(resolve => {
     let url_noprotocol = url.match(/^[a-z]+:\/\/(.+)/)[1];
-    if (!db) throw {name: 'NO DB =(', message: 'DA BLYAT'};
-    let store = db.transaction('Links', 'readonly').objectStore('Links');
-    let urlRequest = store.get(url_noprotocol);
-    urlRequest.onsuccess = event => {
-        let result = event.target.result;
+    cache.get(url_noprotocol).then(result => {
         if (result) {
             result.longUrl.getter = 'cache';
             resolve(result.longUrl);
-        }
-        else loader(url).then(r => {
-            let store = db.transaction('Links', 'readwrite').objectStore('Links');
-            store.add({ shortUrl:url_noprotocol, longUrl:r });
+        } else loader(url).then(r => {
+            cache.update({ shortUrl:url_noprotocol, longUrl:r });
             r.getter = 'vkapi';
             resolve(r);
         });
-    };
+    });
 });
 
 /**
@@ -107,19 +152,19 @@ const vkNeedRelaunch = error => {
 // -- Action --
 
 console.log("URL BACKSTAGE BACKGROUND");
-chrome.runtime.onInstalled.addListener(initDB);
-chrome.runtime.onStartup.addListener(initDB);
+// chrome.runtime.onInstalled.addListener(initDB);
+// chrome.runtime.onStartup.addListener(initDB);
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (!db) {
+    if (!cache) {
         sendResponse({error:'BLEAT NO DB'});
         return;
     }
     // console.log('Rqst', request);
     if (request.type === 'getLongUrl') {
         tryAgain(() => {
-            return getFromDBOrLoad(request.shortUrl, vkApiCheckLink);
+                return getFromDBOrLoad(request.shortUrl, vkApiCheckLink);
             }, vkNeedRelaunch
-        // getFromDBOrLoad(request.shortUrl, vkApiCheckLink
+            // getFromDBOrLoad(request.shortUrl, vkApiCheckLink
         ).then(response => {
             // console.log("RSP", response);
             sendResponse(response);
@@ -127,6 +172,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.log("ERR", error);
             sendResponse({error});
         });
+    } else if (request.type === 'countDB') {
+        cache.count().then(count => { sendResponse({count}); });
+    } else if (request.type === 'importDB') {
+        // TODO: import db handler
+    } else if (request.type === 'exportDB') {
+        cache.all().then(sendResponse);
+    } else if (request.type === 'deleteDB') {
+        cache.clear().then(sendResponse);
     }
     // For async response
     return true;

@@ -8,12 +8,18 @@
     "scripts": ["bg.js"]
   },
   "options_page": "options.html",
+  "options_ui": {
+    "page": "options.html",
+    "chrome_style": true
+  },
   "content_scripts": [{
     "matches": ["https://vk.com/*"],
     "js": ["url-backstage.js"],
     "run_at": "document_end"
   }],
   "permissions": [
+    "downloads",
+    "storage",
     "https://vk.com/*",
     "https://api.vk.com/method/*"
   ]
