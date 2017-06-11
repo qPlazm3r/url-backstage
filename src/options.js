@@ -9,6 +9,7 @@ window.addEventListener('load', () => {
     let outCountDB = ge('db-count');
     let btnExportDB = ge('db-export-btn');
     let btnImportDB = ge('db-import-btn');
+    let btnClearDB = ge('db-clear-btn');
 
     msg({
         type: 'countDB'
@@ -36,5 +37,13 @@ window.addEventListener('load', () => {
             outCountDB.innerHTML = response.count;
         });
         fr.readAsText(file);
+    });
+    btnClearDB.addEventListener('click', event => {
+        let yes = confirm('Delete all data from database?');
+        if (yes) msg({
+            type: 'clearDB'
+        }, response => {
+            outCountDB.innerHTML = 0;
+        });
     });
 });

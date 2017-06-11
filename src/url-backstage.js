@@ -34,7 +34,7 @@ const decodeURIWithCharset = uri => {
 };
 
 
-const inspectHref = href => new Promise(resolve => {
+const inspectHref = href => new Promise((resolve, reject) => {
     if (!href) return;
     let changed = false;
     for (let d of dereferers) {
@@ -52,7 +52,10 @@ const inspectHref = href => new Promise(resolve => {
         }, response => {
             console.log(response);
             //if (!response) throw chrome.runtime.lastError;
-            resolve(response);
+            if(response && !response.error)
+                resolve(response);
+            else
+                reject(response);
         });
         return;
     }
@@ -64,10 +67,12 @@ const findLinks = el => {
     for (let a of links) {
         a.classList.add('urlbs-found');
         inspectHref(a.href).then(r => {
-            a.title = r && r.link;
+            a.title = r.link;
             a.classList.add('urlbs-done');
-            // console.log(r);
-        });
+            if (r.status === 'banned') {
+                a.classList.add('urlbs-bad');
+            }
+        }).catch(console.log);
     }
 };
 

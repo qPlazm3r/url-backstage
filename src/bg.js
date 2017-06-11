@@ -1,6 +1,6 @@
 "use strict";
 
-class Cache {
+class CacheDB {
     constructor(){
         this.dbName = 'UrlBackstage';
         this.dbVersion = 1;
@@ -62,21 +62,40 @@ class Cache {
 }
 
 /** Database */
-const cache = new Cache();
+const cache = new CacheDB();
+const pending = new Map();
 
 /**
  * Get data from DB
  * If no such key, load and store it
  * @param url {string} Short URL to lookup
  * @param loader {Function} Function to load data if not exists
+ * @param tries {number} Attemts to reload pending
  */
-const getFromDBOrLoad = (url, loader) => new Promise((resolve, reject) => {
+const getFromDBOrLoad = (url, loader, tries=5) => new Promise((resolve, reject) => {
     let url_noprotocol = url.match(/^[a-z]+:\/\/(.+)/)[1];
+    let cached = pending.get(url_noprotocol);
+    // Already in map, no need to request db
+    if (cached) {
+        cached.getter = 'cachemap';
+        resolve(cached);
+        return;
+    }
+    // FIXME: false in pending
+    // In progress, wait
+    //if ((cached === false) && (tries > 0)) {
+    //    setTimeout(() => getFromDBOrLoad(url, loader, tries-1).then(resolve).catch(reject), 300);
+    //    return;
+    //}
+    // No such item, load
+    //pending.set(url_noprotocol, false);
     cache.get(url_noprotocol).then(result => {
         if (result) {
-            result.longUrl.getter = 'cache';
+            pending.set(url_noprotocol, result.longUrl);
+            result.longUrl.getter = 'cachedb';
             resolve(result.longUrl);
         } else loader(url).then(r => {
+            pending.set(url_noprotocol, r);
             cache.update({ shortUrl:url_noprotocol, longUrl:r }).catch(reject);
             r.getter = 'vkapi';
             resolve(r);
@@ -173,6 +192,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         case 'clearDB':
             cache.clear().then(sendResponse);
+            pending.clear();
             break;
 
         default:
