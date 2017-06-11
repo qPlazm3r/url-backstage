@@ -52,11 +52,11 @@ class Cache {
     clear() { return this.query('clear', 'readwrite'); }
     remove(key) { return this.query('delete', 'readwrite', key); }
     load(objects) {
-        return new Promise(callback => {
+        return new Promise((resolve, reject) => {
             for (let obj of objects) {
-                this.update(obj);
+                this.update(obj).catch(reject);
             }
-            this.count().then(callback);
+            this.count().then(resolve).catch(reject);
         });
     }
 }
@@ -70,33 +70,18 @@ const cache = new Cache();
  * @param url {string} Short URL to lookup
  * @param loader {Function} Function to load data if not exists
  */
-const getFromDBOrLoad = (url, loader) => new Promise(resolve => {
+const getFromDBOrLoad = (url, loader) => new Promise((resolve, reject) => {
     let url_noprotocol = url.match(/^[a-z]+:\/\/(.+)/)[1];
     cache.get(url_noprotocol).then(result => {
         if (result) {
             result.longUrl.getter = 'cache';
             resolve(result.longUrl);
         } else loader(url).then(r => {
-            cache.update({ shortUrl:url_noprotocol, longUrl:r });
+            cache.update({ shortUrl:url_noprotocol, longUrl:r }).catch(reject);
             r.getter = 'vkapi';
             resolve(r);
-        });
-    });
-});
-
-/**
- * Try to do action, if error pass the test - relaunch later
- * @param action {Function} Promise to launch
- * @param test {Function} Which kinds of errors should relaunch promise
- */
-const tryAgain = (action, test) => new Promise(resolve => {
-    action().then(resolve).catch(error => {
-        let timeout = test(error);
-        if (typeof timeout !== 'number') throw error;
-        setTimeout(() => {
-            tryAgain(action, test).then(resolve);
-            }, timeout);
-    });
+        }).catch(reject);
+    }).catch(reject);
 });
 
 /**
@@ -114,7 +99,7 @@ const decodeHTMLEntities = str => {
  * Resolve long URL using VK API
  * @param href {string} Link to resolve
  */
-const vkApiCheckLink = href => new Promise(resolve => {
+const vkApiCheckLink = href => new Promise((resolve, reject) => {
     const vk_api = 'https://api.vk.com/method/utils.checkLink?url=';
     let xhr = new XMLHttpRequest();
     // No UTF-8 =(
@@ -122,10 +107,19 @@ const vkApiCheckLink = href => new Promise(resolve => {
     xhr.open('GET', vk_api + encodeURIComponent(href));
     xhr.onreadystatechange = () => {
         if (xhr.readyState !== xhr.DONE) return;
-        if (xhr.status !== 200) throw { name: 'HTTP', code: xhr.status, message: xhr.statusText };
+        if (xhr.status !== 200) {
+            reject({ name: 'HTTP', code: xhr.status, message: xhr.statusText });
+            return;
+        }
         let r = JSON.parse(xhr.responseText);
-        if (r.error) throw { name: 'VK API', code: r.error.error_code, message: r.error.error_msg };
-        if (r.response.status === 'processing') throw { name: 'Timeout', message: 'Try again later' };
+        if (r.error) {
+            reject({ name: 'VK API', code: r.error.error_code, message: r.error.error_msg });
+            return;
+        }
+        if (r.response.status === 'processing') {
+            reject({ name: 'Timeout', message: 'Try again later' });
+            return;
+        }
         r.response.link = decodeHTMLEntities(r.response.link);
         resolve(r.response);
     };
@@ -138,10 +132,10 @@ const vkApiCheckLink = href => new Promise(resolve => {
  * @return {number|boolean}
  */
 const vkNeedRelaunch = error => {
-    console.log(error);
-    if ((error.name === 'HTTP') && (error.code >= 500)) return 5000;
+    // console.log(error);
+    if ((error.name === 'HTTP') && (error.code >= 500)) return 2000;
     if (error.name === 'VK API') return 3000;
-    if (error.name === 'Timeout') return 2000;
+    if (error.name === 'Timeout') return 3000;
     return false;
 };
 
@@ -153,15 +147,14 @@ console.log("URL BACKSTAGE BACKGROUND");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.type) {
         case 'getLongUrl':
-            // FIXME: Uncaught Timeout
             const getLoop = () => {
-                try {
-                    getFromDBOrLoad(request.shortUrl, vkApiCheckLink).then(sendResponse);
-                } catch (error) {
-                    let timeout = vkNeedRelaunch(error);
-                    if (timeout) setTimeout(getLoop, timeout);
-                    else sendResponse({error});
-                }
+                getFromDBOrLoad(request.shortUrl, vkApiCheckLink)
+                    .then(sendResponse)
+                    .catch(error => {
+                        let timeout = vkNeedRelaunch(error);
+                        if (timeout) setTimeout(getLoop, timeout);
+                        else sendResponse({error});
+                    });
             };
             getLoop();
             break;
