@@ -15,8 +15,12 @@ const shorteners = [
     /^https?:\/\/bitly\.com\/[0-9A-Za-z_.-]+/,
     /^https?:\/\/bit\.ly\/[0-9A-Za-z_.-]+/,
     /^https?:\/\/clck\.ru\/[0-9A-Za-z_.-]+/,
+    /^https?:\/\/fb\.me\/[0-9A-Za-z_.-]+/,
     /^https?:\/\/goo\.gl\/[0-9A-Za-z_.-]+/,
+    /^https?:\/\/link\.ac\/[0-9A-Za-z_.-]+/,
+    /^https?:\/\/ow\.ly\/[0-9A-Za-z_.-]+/,
     /^https?:\/\/tinyurl\.com\/[0-9A-Za-z_.-]+/,
+    /^https?:\/\/u\.to\/[0-9A-Za-z_.-]+/,
     /^https?:\/\/vk\.cc\/[0-9A-Za-z_.-]+/,
 ];
 
