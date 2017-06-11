@@ -53,14 +53,10 @@ class Cache {
     remove(key) { return this.query('delete', 'readwrite', key); }
     load(objects) {
         return new Promise(callback => {
-            let store = this._db.transaction(this.dbStore, mode).objectStore(this.dbStore);
-            const putNext = () => {
-                if (!objects) { callback(); return; }
-                let rqst = store.put(objects.pop());
-                rqst.onsuccess = putNext;
-                rqst.onerror = event => { throw event.target.error; };
-            };
-            putNext();
+            for (let obj of objects) {
+                this.update(obj);
+            }
+            this.count().then(callback);
         });
     }
 }
@@ -118,7 +114,7 @@ const decodeHTMLEntities = str => {
  * Resolve long URL using VK API
  * @param href {string} Link to resolve
  */
-const vkApiCheckLink = href => new Promise(onlinkready => {
+const vkApiCheckLink = href => new Promise(resolve => {
     const vk_api = 'https://api.vk.com/method/utils.checkLink?url=';
     let xhr = new XMLHttpRequest();
     // No UTF-8 =(
@@ -131,7 +127,7 @@ const vkApiCheckLink = href => new Promise(onlinkready => {
         if (r.error) throw { name: 'VK API', code: r.error.error_code, message: r.error.error_msg };
         if (r.response.status === 'processing') throw { name: 'Timeout', message: 'Try again later' };
         r.response.link = decodeHTMLEntities(r.response.link);
-        onlinkready(r.response);
+        resolve(r.response);
     };
     xhr.send();
 });
@@ -155,31 +151,39 @@ console.log("URL BACKSTAGE BACKGROUND");
 // chrome.runtime.onInstalled.addListener(initDB);
 // chrome.runtime.onStartup.addListener(initDB);
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (!cache) {
-        sendResponse({error:'BLEAT NO DB'});
-        return;
-    }
-    // console.log('Rqst', request);
-    if (request.type === 'getLongUrl') {
-        tryAgain(() => {
-                return getFromDBOrLoad(request.shortUrl, vkApiCheckLink);
-            }, vkNeedRelaunch
-            // getFromDBOrLoad(request.shortUrl, vkApiCheckLink
-        ).then(response => {
-            // console.log("RSP", response);
-            sendResponse(response);
-        }).catch(error => {
-            console.log("ERR", error);
-            sendResponse({error});
-        });
-    } else if (request.type === 'countDB') {
-        cache.count().then(count => { sendResponse({count}); });
-    } else if (request.type === 'importDB') {
-        // TODO: import db handler
-    } else if (request.type === 'exportDB') {
-        cache.all().then(sendResponse);
-    } else if (request.type === 'deleteDB') {
-        cache.clear().then(sendResponse);
+    switch (request.type) {
+        case 'getLongUrl':
+            // FIXME: Uncaught Timeout
+            const getLoop = () => {
+                try {
+                    getFromDBOrLoad(request.shortUrl, vkApiCheckLink).then(sendResponse);
+                } catch (error) {
+                    let timeout = vkNeedRelaunch(error);
+                    if (timeout) setTimeout(getLoop, timeout);
+                    else sendResponse({error});
+                }
+            };
+            getLoop();
+            break;
+
+        case 'countDB':
+            cache.count().then(count => sendResponse({count}));
+            break;
+
+        case 'importDB':
+            cache.load(request.objects).then(count => { sendResponse({count}); });
+            break;
+
+        case 'exportDB':
+            cache.all().then(sendResponse);
+            break;
+
+        case 'clearDB':
+            cache.clear().then(sendResponse);
+            break;
+
+        default:
+            sendResponse({error: 'Unknown request type in message: ' + request.type});
     }
     // For async response
     return true;

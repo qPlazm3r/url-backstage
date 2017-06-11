@@ -12,7 +12,9 @@ const dereferers = [
 // Can get hidden link only after visiting short link or via special services
 // Purpose: making short link from long one, collecting statistics
 const shorteners = [
-    /^https:\/\/bit\.ly\/[0-9A-Za-z_.-]+/,
+    /^https?:\/\/bitly\.com\/[0-9A-Za-z_.-]+/,
+    /^https?:\/\/bit\.ly\/[0-9A-Za-z_.-]+/,
+    /^https?:\/\/clck\.ru\/[0-9A-Za-z_.-]+/,
     /^https?:\/\/goo\.gl\/[0-9A-Za-z_.-]+/,
     /^https?:\/\/tinyurl\.com\/[0-9A-Za-z_.-]+/,
     /^https?:\/\/vk\.cc\/[0-9A-Za-z_.-]+/,
